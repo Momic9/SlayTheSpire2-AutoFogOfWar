@@ -1,6 +1,7 @@
-# 🌫️ oneClickFogWar
+# 🌫️ autoFogOfWar
 
 一款基于图像识别的杀戮尖塔2屏幕自动涂抹工具，专为需要"一键释放战争迷雾"场景设计。程序持续截取屏幕，一旦检测到预设图标（怪物、精英、商店、火堆、问号等），便自动用鼠标右键在该位置涂抹。
+
 Made by anthropic/claude-sonnet-4.6
 
 ---
@@ -19,7 +20,7 @@ Made by anthropic/claude-sonnet-4.6
 ## 📁 项目结构
 
 ```
-oneClickFogWar/
+autoFogOfWar/
 ├── fog_war.py          # 主程序
 └── source/             # 模板图片目录
     ├── monster.png     # 普通怪物图标
