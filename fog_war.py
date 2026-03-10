@@ -28,8 +28,19 @@ COOLDOWN        = 2.0          # 同一位置涂抹后的冷却时间（秒）
 
 pyautogui.FAILSAFE = True   # 鼠标移到左上角可紧急停止
 
-# 全局暂停标志
-paused = False
+# 全局暂停标志（使用 threading.Event 保证线程间可见性）
+_pause_event = threading.Event()   # set = 暂停，clear = 运行
+
+def is_paused() -> bool:
+    return _pause_event.is_set()
+
+def toggle_pause():
+    if _pause_event.is_set():
+        _pause_event.clear()
+        print("\n[F9] 继续")
+    else:
+        _pause_event.set()
+        print("\n[F9] 暂停")
 
 def load_templates(source_dir: str) -> dict:
     """加载 source 目录下所有 PNG 模板，返回 {文件名: BGR numpy数组}"""
@@ -78,10 +89,11 @@ def find_all_matches(screen_bgr: np.ndarray,
 
 def right_click_paint(cx: int, cy: int, size: int = PAINT_SIZE,
                       duration: float = PAINT_DURATION,
-                      step: int = PAINT_STEP):
+                      step: int = PAINT_STEP) -> bool:
     """
     以 (cx, cy) 为中心，按住鼠标右键在 size×size 的区块内来回涂抹。
     采用 S 形扫描路径。
+    若涂抹过程中检测到暂停，立即抬起鼠标并返回 False；正常完成返回 True。
     """
     half = size // 2
     x0, y0 = cx - half, cy - half
@@ -98,6 +110,11 @@ def right_click_paint(cx: int, cy: int, size: int = PAINT_SIZE,
     pyautogui.mouseDown(button='right')
 
     for i, y in enumerate(rows):
+        # 每行开始前检查暂停标志，立即中断
+        if is_paused():
+            pyautogui.mouseUp(button='right')
+            print(f"  → 涂抹被暂停中断: 中心({cx}, {cy})")
+            return False
         if i % 2 == 0:
             pyautogui.moveTo(x1, y, duration=row_time)
         else:
@@ -105,13 +122,11 @@ def right_click_paint(cx: int, cy: int, size: int = PAINT_SIZE,
 
     pyautogui.mouseUp(button='right')
     print(f"  → 涂抹完成: 中心({cx}, {cy})  区块 {size}×{size}px")
+    return True
 
 
 def keyboard_listener():
     """监听 F9（暂停/继续）和 ESC（退出）"""
-    global paused
-    import msvcrt
-
     VK_F9  = 0x78
     VK_ESC = 0x1B
 
@@ -121,16 +136,12 @@ def keyboard_listener():
             print("\n[ESC] 退出程序")
             os._exit(0)
         if ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000:
-            paused = not paused
-            state = "暂停" if paused else "继续"
-            print(f"\n[F9] {state}")
+            toggle_pause()
             time.sleep(0.5)   # 防抖
         time.sleep(0.05)
 
 
 def main():
-    global paused
-
     print("=" * 50)
     print("  FogWar 自动涂抹工具")
     print("  F9  暂停 / 继续")
@@ -153,7 +164,7 @@ def main():
     print("\n[开始] 正在扫描屏幕...\n")
 
     while True:
-        if paused:
+        if is_paused():
             time.sleep(0.2)
             continue
 
@@ -161,8 +172,13 @@ def main():
         now = time.time()
 
         for fname, tmpl in templates.items():
+            if is_paused():
+                continue
             matches = find_all_matches(screen, tmpl, MATCH_THRESHOLD)
             for (cx, cy) in matches:
+                
+                if is_paused():
+                    continue
                 # 冷却检查：找最近的已涂抹点
                 key = (cx // 20 * 20, cy // 20 * 20)   # 量化到 20px 格
                 if now - last_painted.get(key, 0) < COOLDOWN:
